@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bezier Curve Continuity Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+            color: #0f172a;
+        }
+        canvas {
+            touch-action: none;
+            cursor: grab;
+        }
+        canvas:active {
+            cursor: grabbing;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-between p-4 md:p-6">
+
+    <header class="w-full max-w-6xl flex flex-col md:flex-row justify-between items-center mb-4 gap-4 bg-white/90 backdrop-blur p-4 rounded-2xl border border-slate-200 shadow-lg">
+        <div>
+            <h1 class="text-2xl font-black tracking-tight bg-gradient-to-r from-cyan-600 to-indigo-600 bg-clip-text text-transparent">
+                Bézier Curve Continuity Demo
+            </h1>
+            <p class="text-xs text-slate-500 mt-1">
+                Animate an object across two connected cubic Bézier segments ($P_0-P_3$ and $P_3-P_6$) with accurate mathematical continuity constraints.
+            </p>
+        </div>
+        
+        <!-- Continuity Selection Buttons -->
+        <div class="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+            <span class="text-xs font-semibold px-2 text-slate-600">Continuity:</span>
+            <button onclick="setContinuity('C0')" id="btn-C0" class="continuity-btn px-3 py-1.5 text-xs font-bold rounded-lg transition-all bg-indigo-600 text-white shadow">C0</button>
+            <button onclick="setContinuity('G1')" id="btn-G1" class="continuity-btn px-3 py-1.5 text-xs font-bold rounded-lg transition-all text-slate-600 hover:text-slate-900">G1</button>
+            <button onclick="setContinuity('C1')" id="btn-C1" class="continuity-btn px-3 py-1.5 text-xs font-bold rounded-lg transition-all text-slate-600 hover:text-slate-900">C1</button>
+            <button onclick="setContinuity('C2')" id="btn-C2" class="continuity-btn px-3 py-1.5 text-xs font-bold rounded-lg transition-all text-slate-600 hover:text-slate-900">C2</button>
+        </div>
+    </header>
+
+    <main class="w-full max-w-6xl flex-grow flex flex-col lg:flex-row gap-4 relative">
+        <!-- Canvas Container -->
+        <div class="relative w-full lg:flex-grow h-[450px] lg:h-auto bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
+            <canvas id="simCanvas" class="w-full h-full block"></canvas>
+            
+            <!-- Playback controls overlay bottom-right -->
+            <div class="absolute bottom-4 right-4 flex items-center gap-2 bg-white/90 backdrop-blur border border-slate-200 p-2 rounded-xl shadow-md">
+                <button onclick="togglePlay()" id="playBtn" class="w-9 h-9 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg flex items-center justify-center transition shadow">
+                    <i class="fa-solid fa-pause" id="playIcon"></i>
+                </button>
+                <div class="flex items-center gap-2 px-2 text-slate-700">
+                    <span class="text-xs text-slate-500">Speed:</span>
+                    <input type="range" id="speedRange" min="0.2" max="2.5" step="0.1" value="1.0" class="w-20 accent-cyan-600">
+                </div>
+            </div>
+        </div>
+
+        <!-- Non-overlapping Guide & Legend Sidebar -->
+        <div class="w-full lg:w-72 bg-white border border-slate-200 p-4 rounded-2xl shadow-xl flex flex-col justify-between shrink-0 text-xs space-y-3">
+            <div class="font-bold text-cyan-600 flex items-center gap-1.5 text-sm border-b border-slate-100 pb-2">
+                <i class="fa-solid fa-circle-info"></i> Guide & Legend
+            </div>
+            
+            <div class="space-y-2.5">
+                <div class="flex items-center gap-2 text-slate-700">
+                    <span class="w-3 h-3 rounded-full bg-cyan-500 inline-block shrink-0"></span>
+                    <span>Segment 1 Control Points ($P_0, P_1, P_2, P_3$)</span>
+                </div>
+                <div class="flex items-center gap-2 text-slate-700">
+                    <span class="w-3 h-3 rounded-full bg-indigo-500 inline-block shrink-0"></span>
+                    <span>Segment 2 Control Points ($P_3, P_4, P_5, P_6$)</span>
+                </div>
+                <div class="flex items-center gap-2 text-slate-700">
+                    <span class="w-3 h-3 rounded-full bg-emerald-500 inline-block shrink-0"></span>
+                    <span>Animated Object ($P_3$ is shared junction)</span>
+                </div>
+            </div>
+
+            <div class="text-slate-500 pt-3 border-t border-slate-100 bg-slate-50 p-2.5 rounded-xl">
+                💡 <strong>Tip:</strong> Drag any control point around with mouse or touch!
+            </div>
+        </div>
+    </main>
+
+    <footer class="w-full max-w-6xl mt-4 grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+        <div class="bg-white border border-slate-200 p-3.5 rounded-xl shadow-sm">
+            <span class="font-bold text-indigo-600 block mb-1">G1 Continuity (Tangent Direction)</span>
+            <span class="text-slate-500">Tangents share the same direction at $P_3$ ($P_2, P_3, P_4$ collinear), ensuring smooth visual flow, though magnitudes can differ.</span>
+        </div>
+        <div class="bg-white border border-slate-200 p-3.5 rounded-xl shadow-sm">
+            <span class="font-bold text-purple-600 block mb-1">C1 Continuity (First Derivative)</span>
+            <span class="text-slate-500">Strict velocity continuity ($P_2, P_3, P_4$ collinear and equidistant from $P_3$). No sudden speed jolt.</span>
+        </div>
+        <div class="bg-white border border-slate-200 p-3.5 rounded-xl shadow-sm">
+            <span class="font-bold text-pink-600 block mb-1">C2 Continuity (Second Derivative)</span>
+            <span class="text-slate-500">Curvature continuity ($P_5 = 2P_4 - P_3$, perfectly aligned) for buttery smooth acceleration transitions.</span>
+        </div>
+    </footer>
+
+    <script>
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Control Points for two cubic bezier curves sharing P3
+        let points = [
+            { x: 150, y: 350, name: 'P0' },
+            { x: 200, y: 150, name: 'P1' },
+            { x: 350, y: 150, name: 'P2' },
+            { x: 450, y: 300, name: 'P3 (Junction)' },
+            { x: 550, y: 450, name: 'P4' },
+            { x: 700, y: 450, name: 'P5' },
+            { x: 750, y: 250, name: 'P6' }
+        ];
+
+        let currentContinuity = 'C0';
+        let isPlaying = true;
+        let animationProgress = 0; // 0 to 2 (0-1 for seg 1, 1-2 for seg 2)
+        let selectedPoint = null;
+        let hoverPoint = null;
+
+        // Resize canvas to fill display container correctly with high DPI support
+        function resizeCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * window.devicePixelRatio;
+            canvas.height = rect.height * window.devicePixelRatio;
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Preset distinct layouts per continuity mode so their visual descriptions match right away
+        function applyContinuityPresets(mode) {
+            const rect = canvas.getBoundingClientRect();
+            const w = rect.width || 800;
+            const h = rect.height || 500;
+            const cx = w * 0.5;
+            const cy = h * 0.5;
+
+            if (mode === 'C0') {
+                // Sharp corner at P3: completely independent handles
+                points[0] = { x: cx - 280, y: cy + 120, name: 'P0' };
+                points[1] = { x: cx - 180, y: cy - 140, name: 'P1' };
+                points[2] = { x: cx - 90,  y: cy - 120, name: 'P2' };
+                points[3] = { x: cx,       y: cy + 60,  name: 'P3 (Junction)' };
+                points[4] = { x: cx + 80,  y: cy - 140, name: 'P4' };
+                points[5] = { x: cx + 200, y: cy + 120, name: 'P5' };
+                points[6] = { x: cx + 300, y: cy - 40,  name: 'P6' };
+            } else if (mode === 'G1') {
+                // G1 Continuity: P2, P3, P4 are collinear, but handle lengths can differ
+                points[0] = { x: cx - 280, y: cy + 100, name: 'P0' };
+                points[1] = { x: cx - 180, y: cy - 100, name: 'P1' };
+                points[2] = { x: cx - 100, y: cy - 80,  name: 'P2' };
+                points[3] = { x: cx,       y: cy,       name: 'P3 (Junction)' };
+                // P4 is on the exact ray from P3 opposite to (P2 - P3), but with a different length (e.g. 1.8x)
+                points[4] = { x: cx + 180, y: cy + 144, name: 'P4' };
+                points[5] = { x: cx + 260, y: cy + 150, name: 'P5' };
+                points[6] = { x: cx + 320, y: cy - 50,  name: 'P6' };
+            } else if (mode === 'C1') {
+                // C1 Continuity: P2, P3, P4 are collinear and equidistant from P3 (|P3-P2| == |P4-P3|)
+                points[0] = { x: cx - 280, y: cy + 100, name: 'P0' };
+                points[1] = { x: cx - 180, y: cy - 100, name: 'P1' };
+                points[2] = { x: cx - 120, y: cy - 80,  name: 'P2' };
+                points[3] = { x: cx,       y: cy,       name: 'P3 (Junction)' };
+                // P4 is symmetric to P2 across P3
+                points[4] = { x: cx + 120, y: cy + 80,  name: 'P4' };
+                points[5] = { x: cx + 240, y: cy + 120, name: 'P5' };
+                points[6] = { x: cx + 320, y: cy - 50,  name: 'P6' };
+            } else if (mode === 'C2') {
+                // C2 Continuity: C1 condition + curvature continuity (P5 = 2*P4 - P3)
+                points[0] = { x: cx - 280, y: cy + 80,  name: 'P0' };
+                points[1] = { x: cx - 180, y: cy - 80,  name: 'P1' };
+                points[2] = { x: cx - 100, y: cy - 80,  name: 'P2' };
+                points[3] = { x: cx,       y: cy,       name: 'P3 (Junction)' };
+                points[4] = { x: cx + 100, y: cy + 80,  name: 'P4' };
+                points[5] = { x: 2 * points[4].x - points[3].x, y: 2 * points[4].y - points[3].y, name: 'P5' };
+                points[6] = { x: cx + 280, y: cy - 60,  name: 'P6' };
+            }
+        }
+
+        // Set continuity mode
+        function setContinuity(mode) {
+            currentContinuity = mode;
+            document.querySelectorAll('.continuity-btn').forEach(btn => {
+                btn.className = "continuity-btn px-3 py-1.5 text-xs font-bold rounded-lg transition-all text-slate-600 hover:text-slate-900";
+            });
+            const activeBtn = document.getElementById(`btn-${mode}`);
+            activeBtn.className = "continuity-btn px-3 py-1.5 text-xs font-bold rounded-lg transition-all bg-indigo-600 text-white shadow";
+            
+            // Re-apply preset layouts whenever switching modes so user can freely go back and forth between C0, G1, C1, C2
+            applyContinuityPresets(mode);
+            enforceContinuity(3);
+        }
+
+        function togglePlay() {
+            isPlaying = !isPlaying;
+            const icon = document.getElementById('playIcon');
+            const btn = document.getElementById('playBtn');
+            if (isPlaying) {
+                icon.className = "fa-solid fa-pause";
+                btn.classList.add('bg-cyan-600');
+                btn.classList.remove('bg-emerald-600');
+            } else {
+                icon.className = "fa-solid fa-play";
+                btn.classList.remove('bg-cyan-600');
+                btn.classList.add('bg-emerald-600');
+            }
+        }
+
+        function enforceContinuity(changedIndex) {
+            const p0 = points[0], p1 = points[1], p2 = points[2], p3 = points[3], p4 = points[4], p5 = points[5], p6 = points[6];
+
+            if (currentContinuity === 'C0') {
+                // C0: No constraints between segments. User has full independent control.
+                return;
+            }
+
+            if (currentContinuity === 'G1' || currentContinuity === 'C1' || currentContinuity === 'C2') {
+                // G1 / C1 / C2: P2, P3, P4 must be collinear (tangent direction at junction matches)
+                if (changedIndex === 4 && currentContinuity !== 'C1') {
+                    // If user dragged P4, keep P4's direction vector from P3, adjust P2's position
+                    const v4 = { x: p4.x - p3.x, y: p4.y - p3.y };
+                    const len4 = Math.hypot(v4.x, v4.y);
+                    const len2 = Math.hypot(p2.x - p3.x, p2.y - p3.y);
+                    if (len4 > 0.001) {
+                        const targetLen = (currentContinuity === 'C1') ? len4 : len2;
+                        const dir = { x: v4.x / len4, y: v4.y / len4 };
+                        p2.x = p3.x - dir.x * targetLen;
+                        p2.y = p3.y - dir.y * targetLen;
+                    }
+                } else {
+                    // Default or P0..P3 dragged -> adjust P4 based on P2 & P3 vector
+                    const v2 = { x: p3.x - p2.x, y: p3.y - p2.y };
+                    const len2 = Math.hypot(v2.x, v2.y);
+                    const len4 = Math.hypot(p4.x - p3.x, p4.y - p3.y);
+                    if (len2 > 0.001) {
+                        const targetLen = (currentContinuity === 'C1') ? len2 : (len4 > 0.001 ? len4 : len2);
+                        const dir = { x: v2.x / len2, y: v2.y / len2 };
+                        p4.x = p3.x + dir.x * targetLen;
+                        p4.y = p3.y + dir.y * targetLen;
+                    }
+                }
+            }
+
+            if (currentContinuity === 'C2') {
+                // C2: Second derivative equality at junction P3: B1''(1) = B2''(0)
+                p5.x = 2 * p4.x - 2 * p3.x + 2 * p2.x - p1.x;
+                p5.y = 2 * p4.y - 2 * p3.y + 2 * p2.y - p1.y;
+            }
+        }
+
+        // Cubic Bézier formula helper
+        function getBezierPoint(t, p0, p1, p2, p3) {
+            const u = 1 - t;
+            const tt = t * t;
+            const uu = u * u;
+            const uuu = uu * u;
+            const ttt = tt * t;
+
+            let x = uuu * p0.x;
+            x += 3 * uu * t * p1.x;
+            x += 3 * u * tt * p2.x;
+            x += ttt * p3.x;
+
+            let y = uuu * p0.y;
+            y += 3 * uu * t * p1.y;
+            y += 3 * u * tt * p2.y;
+            y += ttt * p3.y;
+
+            return { x, y };
+        }
+
+        // First derivative (tangent vector) for velocity & orientation
+        function getBezierDerivative(t, p0, p1, p2, p3) {
+            const u = 1 - t;
+            const uu = u * u;
+            const tu = u * t;
+            const tt = t * t;
+
+            const dx = 3 * uu * (p1.x - p0.x) + 6 * tu * (p2.x - p1.x) + 3 * tt * (p3.x - p2.x);
+            const dy = 3 * uu * (p1.y - p0.y) + 6 * tu * (p2.y - p1.y) + 3 * tt * (p3.y - p2.y);
+            return { x: dx, y: dy };
+        }
+
+        function getCanvasCoords(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        canvas.addEventListener('mousedown', (e) => handleStart(getCanvasCoords(e)));
+        canvas.addEventListener('mousemove', (e) => handleMove(getCanvasCoords(e)));
+        window.addEventListener('mouseup', () => handleEnd());
+
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            handleStart(getCanvasCoords(e));
+        }, { passive: false });
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            handleMove(getCanvasCoords(e));
+        }, { passive: false });
+        window.addEventListener('touchend', () => handleEnd());
+
+        function handleStart(pos) {
+            for (let i = 0; i < points.length; i++) {
+                const p = points[i];
+                const dist = Math.hypot(p.x - pos.x, p.y - pos.y);
+                if (dist < 24) {
+                    selectedPoint = i;
+                    break;
+                }
+            }
+        }
+
+        function handleMove(pos) {
+            const rect = canvas.getBoundingClientRect();
+            const width = rect.width;
+            const height = rect.height;
+
+            if (selectedPoint !== null) {
+                points[selectedPoint].x = Math.max(30, Math.min(width - 30, pos.x));
+                points[selectedPoint].y = Math.max(30, Math.min(height - 30, pos.y));
+                enforceContinuity(selectedPoint);
+            } else {
+                hoverPoint = null;
+                for (let i = 0; i < points.length; i++) {
+                    const p = points[i];
+                    if (Math.hypot(p.x - pos.x, p.y - pos.y) < 24) {
+                        hoverPoint = i;
+                        break;
+                    }
+                }
+            }
+        }
+
+        function handleEnd() {
+            selectedPoint = null;
+        }
+
+        let lastTime = performance.now();
+
+        function render(currentTime) {
+            const dt = (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+
+            const rect = canvas.getBoundingClientRect();
+            ctx.clearRect(0, 0, rect.width, rect.height);
+
+            // Draw grid lines
+            ctx.strokeStyle = '#f1f5f9';
+            ctx.lineWidth = 1;
+            const gridSize = 40;
+            for (let x = 0; x < rect.width; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, rect.height);
+                ctx.stroke();
+            }
+            for (let y = 0; y < rect.height; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(rect.width, y);
+                ctx.stroke();
+            }
+
+            // Draw control polygon lines
+            // Segment 1 polygon (P0-P1-P2-P3)
+            ctx.strokeStyle = 'rgba(8, 145, 178, 0.25)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            ctx.lineTo(points[1].x, points[1].y);
+            ctx.lineTo(points[2].x, points[2].y);
+            ctx.lineTo(points[3].x, points[3].y);
+            ctx.stroke();
+
+            // Segment 2 polygon (P3-P4-P5-P6)
+            ctx.strokeStyle = 'rgba(79, 70, 229, 0.25)';
+            ctx.beginPath();
+            ctx.moveTo(points[3].x, points[3].y);
+            ctx.lineTo(points[4].x, points[4].y);
+            ctx.lineTo(points[5].x, points[5].y);
+            ctx.lineTo(points[6].x, points[6].y);
+            ctx.stroke();
+            ctx.setLineDash([]); // reset dash
+
+            // Draw Curve Segment 1
+            ctx.strokeStyle = '#0891b2';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            let steps = 60;
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                const pt = getBezierPoint(t, points[0], points[1], points[2], points[3]);
+                if (i === 0) ctx.moveTo(pt.x, pt.y);
+                else ctx.lineTo(pt.x, pt.y);
+            }
+            ctx.stroke();
+
+            // Draw Curve Segment 2
+            ctx.strokeStyle = '#4f46e5';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                const pt = getBezierPoint(t, points[3], points[4], points[5], points[6]);
+                if (i === 0) ctx.moveTo(pt.x, pt.y);
+                else ctx.lineTo(pt.x, pt.y);
+            }
+            ctx.stroke();
+
+            // Update animation progress
+            if (isPlaying) {
+                const speed = parseFloat(document.getElementById('speedRange').value);
+                animationProgress += dt * 0.4 * speed;
+                if (animationProgress >= 2) {
+                    animationProgress = 0; // Loop
+                }
+            }
+
+            // Calculate object position and orientation
+            let objPos, objDeriv;
+            if (animationProgress <= 1) {
+                const t = animationProgress;
+                objPos = getBezierPoint(t, points[0], points[1], points[2], points[3]);
+                objDeriv = getBezierDerivative(t, points[0], points[1], points[2], points[3]);
+            } else {
+                const t = animationProgress - 1;
+                objPos = getBezierPoint(t, points[3], points[4], points[5], points[6]);
+                objDeriv = getBezierDerivative(t, points[3], points[4], points[5], points[6]);
+            }
+
+            const angle = Math.atan2(objDeriv.y, objDeriv.x);
+
+            // Draw animated object (sleek spaceship / glowing marker)
+            ctx.save();
+            ctx.translate(objPos.x, objPos.y);
+            ctx.rotate(angle);
+
+            // Glow shadow
+            ctx.shadowColor = 'rgba(14, 165, 233, 0.4)';
+            ctx.shadowBlur = 12;
+
+            // Object body
+            ctx.fillStyle = '#0284c7';
+            ctx.beginPath();
+            ctx.moveTo(16, 0);
+            ctx.lineTo(-12, 9);
+            ctx.lineTo(-6, 0);
+            ctx.lineTo(-12, -9);
+            ctx.closePath();
+            ctx.fill();
+
+            // Core accent
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(0, 0, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+
+            // Draw Control Points
+            for (let i = 0; i < points.length; i++) {
+                const p = points[i];
+                const isSelected = selectedPoint === i;
+                const isHovered = hoverPoint === i;
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, isSelected || isHovered ? 11 : 8, 0, Math.PI * 2);
+                
+                if (i === 3) {
+                    ctx.fillStyle = '#10b981';
+                    ctx.shadowColor = 'rgba(16, 185, 129, 0.4)';
+                } else if (i < 3) {
+                    ctx.fillStyle = '#0891b2';
+                    ctx.shadowColor = 'rgba(8, 145, 178, 0.4)';
+                } else {
+                    ctx.fillStyle = '#6366f1';
+                    ctx.shadowColor = 'rgba(99, 102, 241, 0.4)';
+                }
+
+                ctx.shadowBlur = isSelected ? 10 : 4;
+                ctx.fill();
+
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#ffffff';
+                ctx.stroke();
+
+                // Label
+                ctx.fillStyle = '#334155';
+                ctx.font = 'bold 11px Inter, sans-serif';
+                ctx.fillText(p.name, p.x + 14, p.y - 6);
+                ctx.restore();
+            }
+
+            requestAnimationFrame(render);
+        }
+
+        // Initialize default layout
+        applyContinuityPresets('C0');
+        requestAnimationFrame(render);
+    </script>
+</body>
+</html>
